@@ -58,12 +58,17 @@ const SETTINGS = {
 
 // ── STATE ──────────────────────────────────────────────────
 let db;
-let bookings       = [];
-let weekOffset     = 0;       // weeks from current week
-let selectedSlot   = null;    // { date: "YYYY-MM-DD", hour: number }
-let selectedDur    = 1;       // hours
-let pendingCancel  = null;    // booking id awaiting email confirmation
+let bookings          = [];
+let weekOffset        = 0;          // weeks from current week
+let selectedSlot      = null;       // { date: "YYYY-MM-DD", hour: number }
+let selectedDur       = 1;          // hours
+let pendingCancel     = null;       // booking id awaiting email confirmation
+let mobileDayDate     = toDateStr(new Date()); // active day on mobile
 // ───────────────────────────────────────────────────────────
+
+function isMobile() {
+  return window.matchMedia("(max-width: 700px)").matches;
+}
 
 // ============================================================
 // FIREBASE
@@ -251,6 +256,46 @@ function renderCalendar() {
 
   renderBookings();
   renderNowLine();
+  renderDayStrip();
+  applyMobileDay();
+}
+
+function renderDayStrip() {
+  const strip = document.getElementById("day-strip");
+  if (!strip) return;
+
+  const days = weekDays(weekOffset);
+  strip.innerHTML = days.map((day) => {
+    const dateStr  = toDateStr(day);
+    const abbr     = day.toLocaleDateString("en", { weekday: "short" });
+    const isToday_ = isToday(day);
+    const isSel    = dateStr === mobileDayDate;
+    return `<button class="day-pill${isToday_ ? " is-today" : ""}${isSel ? " is-selected" : ""}"
+      data-date="${dateStr}" aria-label="${day.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric" })}">
+      <span class="pill-abbr">${abbr}</span>
+      <span class="pill-num">${day.getDate()}</span>
+    </button>`;
+  }).join("");
+
+  strip.querySelectorAll(".day-pill").forEach((pill) => {
+    pill.addEventListener("click", () => {
+      mobileDayDate = pill.dataset.date;
+      applyMobileDay();
+      renderDayStrip();
+    });
+  });
+}
+
+function applyMobileDay() {
+  document.querySelectorAll(".cal-day-col").forEach((col) => {
+    col.classList.toggle("mobile-active", col.dataset.date === mobileDayDate);
+  });
+
+  // Keep mobileDayDate in sync when navigating weeks
+  const days = weekDays(weekOffset).map(toDateStr);
+  if (!days.includes(mobileDayDate)) {
+    mobileDayDate = days.find((d) => !isPastDate(fromDateStr(d))) || days[0];
+  }
 }
 
 function renderBookings() {
@@ -308,11 +353,17 @@ function renderNowLine() {
 }
 
 function updateWeekLabel(days) {
-  const first = days[0], last = days[6];
-  const sameMonth = first.getMonth() === last.getMonth();
-  const label = sameMonth
-    ? `${first.toLocaleDateString("en", { month: "long" })} ${first.getDate()} – ${last.getDate()}, ${first.getFullYear()}`
-    : `${first.toLocaleDateString("en", { month: "short", day: "numeric" })} – ${last.toLocaleDateString("en", { month: "short", day: "numeric" })}, ${last.getFullYear()}`;
+  let label;
+  if (isMobile()) {
+    const d = fromDateStr(mobileDayDate);
+    label = d.toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short" });
+  } else {
+    const first = days[0], last = days[6];
+    const sameMonth = first.getMonth() === last.getMonth();
+    label = sameMonth
+      ? `${first.toLocaleDateString("en", { month: "long" })} ${first.getDate()} – ${last.getDate()}, ${first.getFullYear()}`
+      : `${first.toLocaleDateString("en", { month: "short", day: "numeric" })} – ${last.toLocaleDateString("en", { month: "short", day: "numeric" })}, ${last.getFullYear()}`;
+  }
   document.getElementById("week-label").textContent = label;
 }
 
@@ -562,10 +613,36 @@ function closeAllModals() {
 // ============================================================
 
 function wireEvents() {
-  // Week navigation
-  document.getElementById("prev-week").addEventListener("click", () => { weekOffset--; renderCalendar(); });
-  document.getElementById("next-week").addEventListener("click", () => { weekOffset++; renderCalendar(); });
-  document.getElementById("today-btn").addEventListener("click", () => { weekOffset = 0; renderCalendar(); });
+  // Week / day navigation
+  document.getElementById("prev-week").addEventListener("click", () => {
+    if (isMobile()) {
+      const d = fromDateStr(mobileDayDate);
+      d.setDate(d.getDate() - 1);
+      mobileDayDate = toDateStr(d);
+      const newWeekDays = weekDays(weekOffset).map(toDateStr);
+      if (!newWeekDays.includes(mobileDayDate)) weekOffset--;
+      renderCalendar();
+    } else {
+      weekOffset--; renderCalendar();
+    }
+  });
+  document.getElementById("next-week").addEventListener("click", () => {
+    if (isMobile()) {
+      const d = fromDateStr(mobileDayDate);
+      d.setDate(d.getDate() + 1);
+      mobileDayDate = toDateStr(d);
+      const newWeekDays = weekDays(weekOffset).map(toDateStr);
+      if (!newWeekDays.includes(mobileDayDate)) weekOffset++;
+      renderCalendar();
+    } else {
+      weekOffset++; renderCalendar();
+    }
+  });
+  document.getElementById("today-btn").addEventListener("click", () => {
+    weekOffset = 0;
+    mobileDayDate = toDateStr(new Date());
+    renderCalendar();
+  });
 
   // Booking modal
   document.getElementById("close-booking-modal").addEventListener("click", closeBookingModal);

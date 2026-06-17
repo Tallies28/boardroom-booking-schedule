@@ -775,12 +775,176 @@ html, body {
 }
 
 /* ============================================================
-   RESPONSIVE
+   DAY STRIP (mobile only — hidden on desktop)
    ============================================================ */
-@media (max-width: 640px) {
-  #week-label { min-width: 130px; font-size: 12px; }
-  .room-info p { display: none; }
-  .field-row { grid-template-columns: 1fr; }
+#day-strip {
+  display: none;
+}
+
+/* ============================================================
+   RESPONSIVE — TABLET
+   ============================================================ */
+@media (max-width: 900px) {
   .hdr-right { display: none; }
-  #app-header { padding: 0 14px; }
+}
+
+/* ============================================================
+   RESPONSIVE — MOBILE
+   ============================================================ */
+@media (max-width: 700px) {
+
+  /* Header */
+  #app-header {
+    padding: 0 14px;
+    height: 56px;
+  }
+  --header-h: 56px;
+
+  .room-info h1 { font-size: 15px; }
+  .room-info p  { display: none; }
+  .hdr-right    { display: none; }
+
+  #week-label {
+    font-size: 12px;
+    min-width: 0;
+    max-width: 110px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Day strip */
+  #day-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-shrink: 0;
+  }
+  #day-strip::-webkit-scrollbar { display: none; }
+
+  .day-pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .day-pill:hover { background: var(--oat); }
+
+  .day-pill .pill-abbr {
+    font-family: var(--font-display);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .day-pill .pill-num {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text);
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  .day-pill.is-today .pill-num {
+    background: var(--emerald);
+    color: var(--white);
+  }
+  .day-pill.is-selected {
+    background: var(--sage-light);
+  }
+  .day-pill.is-selected .pill-abbr { color: var(--emerald); }
+  .day-pill.is-selected .pill-num  { color: var(--emerald); font-weight: 600; }
+  .day-pill.is-selected.is-today .pill-num {
+    background: var(--emerald);
+    color: var(--white);
+  }
+
+  /* Calendar scroll area */
+  #calendar-scroller {
+    height: calc(100vh - 56px - 85px); /* header + day strip */
+  }
+
+  /* Hide all day header cells — day strip replaces them */
+  .cal-header { display: none; }
+
+  /* Show only the active day column */
+  .cal-day-col {
+    display: none;
+  }
+  .cal-day-col.mobile-active {
+    display: block;
+    flex: 1;
+  }
+
+  /* Wider time gutter text */
+  .time-label {
+    font-size: 10px;
+    padding: 6px 8px 0;
+  }
+
+  /* Taller hour cells = easier to tap */
+  :root { --hour-h: 64px; }
+  .hour-cell { height: 64px; }
+  .time-label { height: 64px; }
+
+  /* Booking blocks */
+  .booking-block-title { font-size: 12px; }
+  .booking-block-time  { font-size: 11px; }
+
+  /* Modals — full-width bottom sheet */
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal-box {
+    max-width: 100%;
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    border-top: 3px solid var(--emerald);
+    max-height: 88vh;
+  }
+  .modal-box--sm {
+    max-width: 100%;
+  }
+
+  /* Stack form fields */
+  .field-row { grid-template-columns: 1fr; }
+
+  /* Duration buttons — bigger tap targets */
+  .dur-btn {
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  /* Form buttons — full width stacked */
+  .modal-footer {
+    flex-direction: column-reverse;
+    gap: 10px;
+  }
+  .btn-primary,
+  .btn-ghost,
+  .btn-danger {
+    width: 100%;
+    text-align: center;
+    padding: 13px;
+    font-size: 14px;
+  }
 }
