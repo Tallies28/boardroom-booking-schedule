@@ -34,6 +34,10 @@ import {
   doc,
   onSnapshot,
   serverTimestamp,
+  writeBatch,
+  query,
+  where,
+  getDocs,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ── YOUR FIREBASE CONFIG ────────────────────────────────────
@@ -64,6 +68,7 @@ let selectedSlot      = null;       // { date: "YYYY-MM-DD", hour: number }
 let selectedDur       = 1;          // hours
 let pendingCancel     = null;       // booking id awaiting email confirmation
 let mobileDayDate     = toDateStr(new Date()); // active day on mobile
+let selectedRecur     = "none";               // 'none'|'daily'|'weekly'|'monthly'
 // ───────────────────────────────────────────────────────────
 
 function isMobile() {
@@ -125,8 +130,30 @@ async function saveBooking(data) {
   });
 }
 
+async function saveBatchBookings(baseData, dates) {
+  const groupId = dates.length > 1 ? crypto.randomUUID() : null;
+  const batch   = writeBatch(db);
+  dates.forEach((date) => {
+    const ref = doc(collection(db, "bookings"));
+    batch.set(ref, {
+      ...baseData,
+      date,
+      ...(groupId ? { groupId } : {}),
+      createdAt: serverTimestamp(),
+    });
+  });
+  return batch.commit();
+}
+
 async function removeBooking(id) {
   return deleteDoc(doc(db, "bookings", id));
+}
+
+async function removeBookingGroup(groupId) {
+  const snap  = await getDocs(query(collection(db, "bookings"), where("groupId", "==", groupId)));
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  return batch.commit();
 }
 
 // ============================================================
@@ -232,6 +259,76 @@ function populateTimeSelect(defaultTime) {
       sel.appendChild(opt);
     }
   }
+}
+
+// ============================================================
+// RECURRENCE HELPERS
+// ============================================================
+
+function computeOccurrences(startDateStr, recur, selectedWeekDays, endDateStr) {
+  if (recur === "none" || !endDateStr) return [startDateStr];
+
+  const start = fromDateStr(startDateStr);
+  const end   = fromDateStr(endDateStr);
+  if (end < start) return [startDateStr];
+
+  const dates = [];
+
+  if (recur === "daily") {
+    let d = new Date(start);
+    while (d <= end && dates.length < 100) {
+      dates.push(toDateStr(d));
+      d.setDate(d.getDate() + 1);
+    }
+  } else if (recur === "weekly") {
+    if (!selectedWeekDays.length) return [];
+    let d = new Date(start);
+    while (d <= end && dates.length < 100) {
+      if (selectedWeekDays.includes(d.getDay())) dates.push(toDateStr(d));
+      d.setDate(d.getDate() + 1);
+    }
+  } else if (recur === "monthly") {
+    let d = new Date(start);
+    while (d <= end && dates.length < 24) {
+      dates.push(toDateStr(d));
+      d.setMonth(d.getMonth() + 1);
+    }
+  }
+
+  return dates;
+}
+
+function getSelectedWeekDays() {
+  return Array.from(document.querySelectorAll('input[name="rday"]:checked'))
+    .map((cb) => parseInt(cb.value, 10));
+}
+
+function updateRecurHint() {
+  const hint = document.getElementById("recur-hint");
+  if (!hint || !selectedSlot) return;
+
+  const endDateStr = document.getElementById("f-recur-end").value;
+  if (!endDateStr) { hint.classList.add("hidden"); return; }
+
+  const days  = selectedRecur === "weekly" ? getSelectedWeekDays() : [];
+  const dates = computeOccurrences(selectedSlot.date, selectedRecur, days, endDateStr);
+
+  if (dates.length === 0) {
+    hint.textContent = "No occurrences — select at least one day.";
+    hint.style.color = "var(--danger)";
+  } else {
+    hint.textContent = `Creates ${dates.length} booking${dates.length !== 1 ? "s" : ""}`;
+    hint.style.color = "var(--sage)";
+  }
+  hint.classList.remove("hidden");
+}
+
+function defaultEndDate(startDateStr, recur) {
+  const d = fromDateStr(startDateStr);
+  if (recur === "daily")   d.setDate(d.getDate() + 14);
+  if (recur === "weekly")  d.setDate(d.getDate() + 56);
+  if (recur === "monthly") d.setMonth(d.getMonth() + 3);
+  return toDateStr(d);
 }
 
 // ============================================================
@@ -359,6 +456,7 @@ function renderBookings() {
     block.style.top    = `${top}px`;
     block.style.height = `${Math.max(height, 22)}px`;
     block.innerHTML = `
+      ${b.groupId ? `<span class="recur-badge" title="Recurring">↻</span>` : ""}
       <div class="booking-block-title">${esc(b.title)}</div>
       <div class="booking-block-time">${b.startTime} – ${b.endTime}</div>
       ${height > 38 ? `<div class="booking-block-name">${esc(b.name)}</div>` : ""}
@@ -409,11 +507,25 @@ function updateWeekLabel(days) {
 // ============================================================
 
 function openBookingModal(dateStr, hour) {
-  selectedSlot = { date: dateStr };
-  selectedDur  = 1;
+  selectedSlot  = { date: dateStr };
+  selectedDur   = 1;
+  selectedRecur = "none";
 
   document.getElementById("booking-form").reset();
   document.getElementById("slot-display").textContent = fmtDateLong(dateStr);
+
+  // Reset recurrence UI
+  document.querySelectorAll(".recur-grid .dur-btn").forEach((b) => b.classList.remove("active"));
+  document.querySelector('.recur-grid .dur-btn[data-recur="none"]').classList.add("active");
+  document.getElementById("recur-days-wrap").classList.add("hidden");
+  document.getElementById("recur-end-wrap").classList.add("hidden");
+  document.getElementById("recur-hint").classList.add("hidden");
+
+  // Pre-check the booked day of week for weekly recurrence
+  const dow = fromDateStr(dateStr).getDay();
+  document.querySelectorAll('input[name="rday"]').forEach((cb) => {
+    cb.checked = parseInt(cb.value, 10) === dow;
+  });
 
   // Populate time select defaulting to the clicked hour
   const defaultTime = `${pad(hour)}:00`;
@@ -545,19 +657,35 @@ async function handleBookingSubmit(e) {
     return;
   }
 
+  // Compute recurring dates
+  const endDateStr = document.getElementById("f-recur-end").value;
+  const weekDays   = selectedRecur === "weekly" ? getSelectedWeekDays() : [];
+
+  if (selectedRecur === "weekly" && weekDays.length === 0) {
+    showToast("Please select at least one day for weekly recurrence.", "error");
+    return;
+  }
+
+  const dates = computeOccurrences(selectedSlot.date, selectedRecur, weekDays, endDateStr);
+
+  if (dates.length === 0) {
+    showToast("No valid dates found for this recurrence.", "error");
+    return;
+  }
+
   const btn = document.getElementById("submit-btn");
   btn.disabled    = true;
-  btn.textContent = "Saving…";
+  btn.textContent = dates.length > 1 ? `Saving ${dates.length} bookings…` : "Saving…";
+
+  const baseData = { title, name, email, notes, startTime, endTime };
 
   try {
-    await saveBooking({
-      title, name, email, notes,
-      date:      selectedSlot.date,
-      startTime,
-      endTime,
-    });
+    await saveBatchBookings(baseData, dates);
     closeBookingModal();
-    showToast("Booking confirmed!", "success");
+    const msg = dates.length > 1
+      ? `${dates.length} recurring bookings confirmed!`
+      : "Booking confirmed!";
+    showToast(msg, "success");
   } catch (err) {
     console.error(err);
     showToast("Failed to save. Please try again.", "error");
@@ -574,8 +702,14 @@ async function handleBookingSubmit(e) {
 function openViewModal(booking) {
   const past = isPastSlot(booking.date, parseInt(booking.startTime, 10));
 
+  const isRecurring = !!booking.groupId;
+  const seriesCount = isRecurring
+    ? bookings.filter((b) => b.groupId === booking.groupId).length
+    : 0;
+
   document.getElementById("view-details").innerHTML = `
     <div class="detail-row"><span class="detail-lbl">Meeting</span><span class="detail-val">${esc(booking.title)}</span></div>
+    ${isRecurring ? `<div class="detail-row"><span class="detail-lbl">Recurs</span><span class="detail-val" style="color:var(--sage)">↻ Recurring · ${seriesCount} booking${seriesCount !== 1 ? "s" : ""} in series</span></div>` : ""}
     <div class="detail-row"><span class="detail-lbl">Date</span><span class="detail-val">${fmtDateLong(booking.date)}</span></div>
     <div class="detail-row"><span class="detail-lbl">Time</span><span class="detail-val">${booking.startTime} – ${booking.endTime}</span></div>
     <div class="detail-row"><span class="detail-lbl">Booked by</span><span class="detail-val">${esc(booking.name)}</span></div>
@@ -583,7 +717,12 @@ function openViewModal(booking) {
     ${booking.notes ? `<div class="detail-row"><span class="detail-lbl">Notes</span><span class="detail-val">${esc(booking.notes)}</span></div>` : ""}
     <div class="modal-footer" style="margin-top:16px">
       <button class="btn-ghost" id="vm-close-btn">Close</button>
-      ${!past ? `<button class="btn-danger" id="vm-cancel-btn">Cancel Booking</button>` : ""}
+      ${!past && isRecurring ? `
+        <button class="btn-outline-danger" id="vm-cancel-one-btn">This Only</button>
+        <button class="btn-danger" id="vm-cancel-all-btn">Cancel Series</button>
+      ` : !past ? `
+        <button class="btn-danger" id="vm-cancel-btn">Cancel Booking</button>
+      ` : ""}
     </div>
   `;
 
@@ -592,10 +731,21 @@ function openViewModal(booking) {
   );
 
   if (!past) {
-    document.getElementById("vm-cancel-btn").addEventListener("click", () => {
-      document.getElementById("view-modal").classList.add("hidden");
-      openCancelModal(booking.id);
-    });
+    if (isRecurring) {
+      document.getElementById("vm-cancel-one-btn").addEventListener("click", () => {
+        document.getElementById("view-modal").classList.add("hidden");
+        openCancelModal(booking.id, booking.groupId, false);
+      });
+      document.getElementById("vm-cancel-all-btn").addEventListener("click", () => {
+        document.getElementById("view-modal").classList.add("hidden");
+        openCancelModal(booking.id, booking.groupId, true);
+      });
+    } else {
+      document.getElementById("vm-cancel-btn").addEventListener("click", () => {
+        document.getElementById("view-modal").classList.add("hidden");
+        openCancelModal(booking.id, null, false);
+      });
+    }
   }
 
   document.getElementById("view-modal").classList.remove("hidden");
@@ -605,16 +755,29 @@ function openViewModal(booking) {
 // CANCEL MODAL
 // ============================================================
 
-function openCancelModal(bookingId) {
-  pendingCancel = bookingId;
+function openCancelModal(bookingId, groupId, cancelAll) {
+  pendingCancel = { id: bookingId, groupId, cancelAll };
   document.getElementById("cancel-email-input").value = "";
   document.getElementById("cancel-error").classList.add("hidden");
+
+  const infoEl = document.getElementById("cancel-info-text");
+  if (cancelAll && groupId) {
+    const count = bookings.filter((b) => b.groupId === groupId).length;
+    infoEl.textContent = `This will cancel all ${count} bookings in this series. Enter your email to confirm.`;
+  } else {
+    infoEl.textContent = "Enter the email address used when booking to confirm cancellation.";
+  }
+
+  document.getElementById("confirm-cancel-btn").textContent =
+    cancelAll ? "Cancel Entire Series" : "Cancel Booking";
+
   document.getElementById("cancel-modal").classList.remove("hidden");
   setTimeout(() => document.getElementById("cancel-email-input").focus(), 60);
 }
 
 async function handleConfirmCancel() {
-  const booking = bookings.find((b) => b.id === pendingCancel);
+  if (!pendingCancel) return;
+  const booking = bookings.find((b) => b.id === pendingCancel.id);
   if (!booking) return;
 
   const entered = document.getElementById("cancel-email-input").value.trim().toLowerCase();
@@ -628,10 +791,15 @@ async function handleConfirmCancel() {
   btn.textContent = "Cancelling…";
 
   try {
-    await removeBooking(pendingCancel);
+    if (pendingCancel.cancelAll && pendingCancel.groupId) {
+      await removeBookingGroup(pendingCancel.groupId);
+      showToast("Entire series cancelled.", "success");
+    } else {
+      await removeBooking(pendingCancel.id);
+      showToast("Booking cancelled.", "success");
+    }
     document.getElementById("cancel-modal").classList.add("hidden");
     pendingCancel = null;
-    showToast("Booking cancelled.", "success");
   } catch (err) {
     console.error(err);
     showToast("Failed to cancel. Please try again.", "error");
@@ -749,6 +917,33 @@ function wireEvents() {
   document.getElementById("cancel-email-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") handleConfirmCancel();
   });
+
+  // Recurrence type selector
+  document.getElementById("recur-grid").addEventListener("click", (e) => {
+    const btn = e.target.closest(".dur-btn[data-recur]");
+    if (!btn) return;
+
+    selectedRecur = btn.dataset.recur;
+    document.querySelectorAll(".recur-grid .dur-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    const isRecur = selectedRecur !== "none";
+    document.getElementById("recur-days-wrap").classList.toggle("hidden", selectedRecur !== "weekly");
+    document.getElementById("recur-end-wrap").classList.toggle("hidden", !isRecur);
+
+    if (isRecur && selectedSlot) {
+      const endEl = document.getElementById("f-recur-end");
+      endEl.min   = selectedSlot.date;
+      if (!endEl.value) endEl.value = defaultEndDate(selectedSlot.date, selectedRecur);
+      updateRecurHint();
+    } else {
+      document.getElementById("recur-hint").classList.add("hidden");
+    }
+  });
+
+  // Day checkboxes and end date — update hint on change
+  document.getElementById("recur-day-checks").addEventListener("change", updateRecurHint);
+  document.getElementById("f-recur-end").addEventListener("change", updateRecurHint);
 
   // Escape key closes any open modal
   document.addEventListener("keydown", (e) => {

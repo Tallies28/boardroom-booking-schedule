@@ -113,6 +113,35 @@
           <p class="warn-msg hidden" id="conflict-msg">⚠ This time overlaps an existing booking.</p>
         </div>
         <div class="field">
+          <label>Recurrence <span class="opt">optional</span></label>
+          <div class="recur-grid" id="recur-grid">
+            <button type="button" class="dur-btn active" data-recur="none">Once</button>
+            <button type="button" class="dur-btn" data-recur="daily">Daily</button>
+            <button type="button" class="dur-btn" data-recur="weekly">Weekly</button>
+            <button type="button" class="dur-btn" data-recur="monthly">Monthly</button>
+          </div>
+        </div>
+
+        <div class="field hidden" id="recur-days-wrap">
+          <label>Repeat on</label>
+          <div class="day-check-row" id="recur-day-checks">
+            <label class="day-check"><input type="checkbox" name="rday" value="1"><span>Mo</span></label>
+            <label class="day-check"><input type="checkbox" name="rday" value="2"><span>Tu</span></label>
+            <label class="day-check"><input type="checkbox" name="rday" value="3"><span>We</span></label>
+            <label class="day-check"><input type="checkbox" name="rday" value="4"><span>Th</span></label>
+            <label class="day-check"><input type="checkbox" name="rday" value="5"><span>Fr</span></label>
+            <label class="day-check"><input type="checkbox" name="rday" value="6"><span>Sa</span></label>
+            <label class="day-check"><input type="checkbox" name="rday" value="0"><span>Su</span></label>
+          </div>
+        </div>
+
+        <div class="field hidden" id="recur-end-wrap">
+          <label for="f-recur-end">End Date <span class="req">*</span></label>
+          <input type="date" id="f-recur-end">
+          <p class="recur-hint hidden" id="recur-hint"></p>
+        </div>
+
+        <div class="field">
           <label for="f-notes">Notes <span class="opt">optional</span></label>
           <textarea id="f-notes" rows="2" placeholder="Agenda, equipment needed, attendees…"></textarea>
         </div>
@@ -147,7 +176,7 @@
         </button>
       </div>
       <div style="padding: 0 20px 20px">
-        <p class="cancel-info">Enter the email address used when booking to confirm cancellation.</p>
+        <p class="cancel-info" id="cancel-info-text">Enter the email address used when booking to confirm cancellation.</p>
         <div class="field" style="margin-top:14px">
           <label for="cancel-email-input">Email Address</label>
           <input id="cancel-email-input" type="email" placeholder="your@email.com">
