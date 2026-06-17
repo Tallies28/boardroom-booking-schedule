@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Boardroom Booking</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Loading -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Firebase setup reminder -->
+  <div id="setup-banner" class="hidden">
+    <span>⚠️ Firebase is not configured yet. Open <strong>app.js</strong> and replace the placeholder values with your Firebase credentials.</span>
+    <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer">Open Firebase Console →</a>
+  </div>
+
+  <!-- Header -->
+  <header id="app-header">
+    <div class="hdr-left">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="17" rx="2" stroke="#2563eb" stroke-width="2"/>
+        <path d="M3 10h18" stroke="#2563eb" stroke-width="2"/>
+        <path d="M8 2v4M16 2v4" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div class="room-info">
+        <h1 id="room-name-heading">Main Boardroom</h1>
+        <p>Click any available slot to book</p>
+      </div>
+    </div>
+
+    <div class="hdr-center">
+      <button class="icon-btn" id="prev-week" title="Previous week" aria-label="Previous week">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15,18 9,12 15,6"/></svg>
+      </button>
+      <span id="week-label"></span>
+      <button class="icon-btn" id="next-week" title="Next week" aria-label="Next week">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
+      </button>
+      <button class="today-btn" id="today-btn">Today</button>
+    </div>
+
+    <div class="hdr-right">
+      <span class="live-badge" id="live-badge" title="Connecting...">
+        <span class="live-dot" id="live-dot"></span>
+        <span id="live-text">Connecting</span>
+      </span>
+    </div>
+  </header>
+
+  <!-- Calendar -->
+  <div id="calendar-scroller">
+    <div id="calendar"></div>
+  </div>
+
+  <!-- ── New Booking Modal ── -->
+  <div id="booking-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="bm-heading">
+    <div class="modal-box">
+      <div class="modal-hdr">
+        <h2 id="bm-heading">New Booking</h2>
+        <button class="close-btn" id="close-booking-modal" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form id="booking-form" novalidate>
+        <div class="field">
+          <label for="f-title">Meeting Title <span class="req">*</span></label>
+          <input id="f-title" type="text" placeholder="e.g. Q3 Planning" autocomplete="off" required>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-name">Your Name <span class="req">*</span></label>
+            <input id="f-name" type="text" placeholder="Full name" autocomplete="name" required>
+          </div>
+          <div class="field">
+            <label for="f-email">Email <span class="req">*</span></label>
+            <input id="f-email" type="email" placeholder="you@company.com" autocomplete="email" required>
+          </div>
+        </div>
+        <div class="field">
+          <label>Date &amp; Start Time</label>
+          <div class="slot-pill" id="slot-display"></div>
+        </div>
+        <div class="field">
+          <label>Duration <span class="req">*</span></label>
+          <div class="dur-grid" id="dur-grid">
+            <button type="button" class="dur-btn active" data-h="1">1 hr</button>
+            <button type="button" class="dur-btn" data-h="2">2 hrs</button>
+            <button type="button" class="dur-btn" data-h="3">3 hrs</button>
+            <button type="button" class="dur-btn" data-h="4">Half day</button>
+            <button type="button" class="dur-btn" data-h="8">Full day</button>
+          </div>
+          <p class="warn-msg hidden" id="conflict-msg">⚠ This duration overlaps an existing booking.</p>
+        </div>
+        <div class="field">
+          <label for="f-notes">Notes <span class="opt">optional</span></label>
+          <textarea id="f-notes" rows="2" placeholder="Agenda, equipment needed, attendees…"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-ghost" id="cancel-form">Cancel</button>
+          <button type="submit" class="btn-primary" id="submit-btn">Confirm Booking</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── View Booking Modal ── -->
+  <div id="view-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="vm-heading">
+    <div class="modal-box">
+      <div class="modal-hdr">
+        <h2 id="vm-heading">Booking Details</h2>
+        <button class="close-btn" id="close-view-modal" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="view-details"></div>
+    </div>
+  </div>
+
+  <!-- ── Cancel Confirm Modal ── -->
+  <div id="cancel-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="cm-heading">
+    <div class="modal-box modal-box--sm">
+      <div class="modal-hdr">
+        <h2 id="cm-heading">Cancel Booking</h2>
+        <button class="close-btn" id="close-cancel-modal" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div style="padding: 0 20px 20px">
+        <p class="cancel-info">Enter the email address used when booking to confirm cancellation.</p>
+        <div class="field" style="margin-top:14px">
+          <label for="cancel-email-input">Email Address</label>
+          <input id="cancel-email-input" type="email" placeholder="your@email.com">
+          <p class="err-msg hidden" id="cancel-error">Email doesn't match. Please try again.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-ghost" id="dismiss-cancel">Go back</button>
+          <button type="button" class="btn-danger" id="confirm-cancel-btn">Cancel Booking</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
