@@ -177,10 +177,31 @@ function isPastSlot(dateStr, hour) {
   return false;
 }
 
+// "14:30" → 14.5
+function timeToHours(timeStr) {
+  const [h, m] = timeStr.split(":").map(Number);
+  return h + m / 60;
+}
+
+// "14:00" + 1.5 → "15:30"
+function addHours(timeStr, hours) {
+  const [h, m] = timeStr.split(":").map(Number);
+  const totalMins = h * 60 + m + Math.round(hours * 60);
+  return `${pad(Math.floor(totalMins / 60))}:${pad(totalMins % 60)}`;
+}
+
+// "14:30" → "2:30 PM"
+function fmtTime(timeStr) {
+  const [h, m] = timeStr.split(":").map(Number);
+  const period = h < 12 ? "AM" : "PM";
+  const h12    = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${pad(m)} ${period}`;
+}
+
 function fmtHour(h) {
-  if (h === 0)   return "12:00 AM";
-  if (h < 12)    return `${h}:00 AM`;
-  if (h === 12)  return "12:00 PM";
+  if (h === 0)  return "12:00 AM";
+  if (h < 12)   return `${h}:00 AM`;
+  if (h === 12) return "12:00 PM";
   return `${h - 12}:00 PM`;
 }
 
@@ -195,6 +216,22 @@ function fmtDateLong(dateStr) {
   return fromDateStr(dateStr).toLocaleDateString("en-ZA", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
+}
+
+// Populate the start-time <select> with 15-min interval options
+function populateTimeSelect(defaultTime) {
+  const sel = document.getElementById("f-start-time");
+  sel.innerHTML = "";
+  for (let h = SETTINGS.dayStart; h < SETTINGS.dayEnd; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      const val  = `${pad(h)}:${pad(m)}`;
+      const opt  = document.createElement("option");
+      opt.value  = val;
+      opt.text   = fmtTime(val);
+      if (val === defaultTime) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
 }
 
 // ============================================================
@@ -307,8 +344,8 @@ function renderBookings() {
     const col = document.getElementById(`col-${b.date}`);
     if (!col) return;
 
-    const startH = parseInt(b.startTime.split(":")[0], 10);
-    const endH   = parseInt(b.endTime.split(":")[0],   10);
+    const startH = timeToHours(b.startTime);
+    const endH   = timeToHours(b.endTime);
     if (startH >= dayEnd || endH <= dayStart) return;
 
     const clampedStart = Math.max(startH, dayStart);
@@ -372,12 +409,32 @@ function updateWeekLabel(days) {
 // ============================================================
 
 function openBookingModal(dateStr, hour) {
-  selectedSlot = { date: dateStr, hour };
+  selectedSlot = { date: dateStr };
   selectedDur  = 1;
 
   document.getElementById("booking-form").reset();
-  document.getElementById("slot-display").textContent =
-    `${fmtDateLong(dateStr)}  ·  ${fmtHour(hour)}`;
+  document.getElementById("slot-display").textContent = fmtDateLong(dateStr);
+
+  // Populate time select defaulting to the clicked hour
+  const defaultTime = `${pad(hour)}:00`;
+  populateTimeSelect(defaultTime);
+
+  // Re-check conflicts whenever start time changes
+  const sel = document.getElementById("f-start-time");
+  sel.onchange = () => {
+    refreshDurButtons();
+    document.getElementById("conflict-msg").classList.add("hidden");
+    // If selected duration now conflicts, pick first available
+    const active = document.querySelector(".dur-btn.active");
+    if (active && active.classList.contains("unavail")) {
+      const first = document.querySelector(".dur-btn:not(.unavail)");
+      if (first) {
+        active.classList.remove("active");
+        first.classList.add("active");
+        selectedDur = parseFloat(first.dataset.h);
+      }
+    }
+  };
 
   refreshDurButtons();
   document.getElementById("conflict-msg").classList.add("hidden");
@@ -390,57 +447,66 @@ function closeBookingModal() {
   selectedSlot = null;
 }
 
+function getSelectedStartTime() {
+  const sel = document.getElementById("f-start-time");
+  return sel ? sel.value : null;
+}
+
+function hasConflict(dateStr, startTimeStr, durationHours) {
+  const startH = timeToHours(startTimeStr);
+  const endH   = startH + durationHours;
+  return bookings.some((b) => {
+    if (b.date !== dateStr) return false;
+    const bs = timeToHours(b.startTime);
+    const be = timeToHours(b.endTime);
+    return startH < be && endH > bs;
+  });
+}
+
 function refreshDurButtons() {
   if (!selectedSlot) return;
+  const startTime = getSelectedStartTime();
+  if (!startTime) return;
+  const startH = timeToHours(startTime);
+
   document.querySelectorAll(".dur-btn").forEach((btn) => {
-    const h   = parseInt(btn.dataset.h, 10);
-    const end = selectedSlot.hour + h;
+    const dur = parseFloat(btn.dataset.h);
+    const endH = startH + dur;
     btn.classList.remove("active", "unavail");
 
-    if (end > SETTINGS.dayEnd) {
+    if (endH > SETTINGS.dayEnd) {
       btn.classList.add("unavail");
       return;
     }
-
-    const clash = bookings.some((b) => {
-      if (b.date !== selectedSlot.date) return false;
-      const bs = parseInt(b.startTime, 10);
-      const be = parseInt(b.endTime,   10);
-      return selectedSlot.hour < be && end > bs;
-    });
-
-    if (clash) btn.classList.add("unavail");
-    if (h === selectedDur && !clash && end <= SETTINGS.dayEnd)
-      btn.classList.add("active");
+    if (hasConflict(selectedSlot.date, startTime, dur)) {
+      btn.classList.add("unavail");
+      return;
+    }
+    if (dur === selectedDur) btn.classList.add("active");
   });
 
   // ensure at least the first non-unavailable btn is active
-  const active = document.querySelector(".dur-btn.active");
-  if (!active) {
+  if (!document.querySelector(".dur-btn.active")) {
     const first = document.querySelector(".dur-btn:not(.unavail)");
     if (first) {
       first.classList.add("active");
-      selectedDur = parseInt(first.dataset.h, 10);
+      selectedDur = parseFloat(first.dataset.h);
     }
   }
 }
 
-function setDuration(h) {
-  const btn = document.querySelector(`.dur-btn[data-h="${h}"]`);
+function setDuration(dur) {
+  const btn = document.querySelector(`.dur-btn[data-h="${dur}"]`);
   if (!btn || btn.classList.contains("unavail")) return;
-  selectedDur = h;
+  selectedDur = dur;
   document.querySelectorAll(".dur-btn").forEach((b) => b.classList.remove("active"));
   btn.classList.add("active");
 
-  // Check whether THIS exact slot+duration conflicts
-  const endH = selectedSlot.hour + h;
-  const clash = bookings.some((b) => {
-    if (b.date !== selectedSlot.date) return false;
-    const bs = parseInt(b.startTime, 10);
-    const be = parseInt(b.endTime,   10);
-    return selectedSlot.hour < be && endH > bs;
-  });
-  document.getElementById("conflict-msg").classList.toggle("hidden", !clash);
+  const startTime = getSelectedStartTime();
+  if (startTime) {
+    const clash = hasConflict(selectedSlot.date, startTime, dur);
+    document.getElementById("conflict-msg").classList.toggle("hidden", !clash);
+  }
 }
 
 async function handleBookingSubmit(e) {
@@ -458,18 +524,18 @@ async function handleBookingSubmit(e) {
 
   if (!selectedSlot) return;
 
-  const startH = selectedSlot.hour;
-  const endH   = startH + selectedDur;
+  const startTime = getSelectedStartTime();
+  if (!startTime) return;
+  const endTime = addHours(startTime, selectedDur);
+
+  // Validate end time doesn't exceed day bounds
+  if (timeToHours(endTime) > SETTINGS.dayEnd) {
+    showToast("Booking extends past end of day. Please shorten the duration.", "error");
+    return;
+  }
 
   // Final conflict guard
-  const clash = bookings.some((b) => {
-    if (b.date !== selectedSlot.date) return false;
-    const bs = parseInt(b.startTime, 10);
-    const be = parseInt(b.endTime,   10);
-    return startH < be && endH > bs;
-  });
-
-  if (clash) {
+  if (hasConflict(selectedSlot.date, startTime, selectedDur)) {
     showToast("This slot has just been taken. Please choose another.", "error");
     return;
   }
@@ -487,8 +553,8 @@ async function handleBookingSubmit(e) {
     await saveBooking({
       title, name, email, notes,
       date:      selectedSlot.date,
-      startTime: `${pad(startH)}:00`,
-      endTime:   `${pad(endH)}:00`,
+      startTime,
+      endTime,
     });
     closeBookingModal();
     showToast("Booking confirmed!", "success");
@@ -656,7 +722,7 @@ function wireEvents() {
   document.getElementById("dur-grid").addEventListener("click", (e) => {
     const btn = e.target.closest(".dur-btn");
     if (btn && !btn.classList.contains("unavail"))
-      setDuration(parseInt(btn.dataset.h, 10));
+      setDuration(parseFloat(btn.dataset.h));
   });
 
   // View modal

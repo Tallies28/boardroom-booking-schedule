@@ -87,20 +87,30 @@
             <input id="f-email" type="email" placeholder="you@company.com" autocomplete="email" required>
           </div>
         </div>
-        <div class="field">
-          <label>Date &amp; Start Time</label>
-          <div class="slot-pill" id="slot-display"></div>
+        <div class="field-row">
+          <div class="field">
+            <label>Date</label>
+            <div class="slot-pill" id="slot-display"></div>
+          </div>
+          <div class="field">
+            <label for="f-start-time">Start Time <span class="req">*</span></label>
+            <select id="f-start-time"></select>
+          </div>
         </div>
         <div class="field">
           <label>Duration <span class="req">*</span></label>
           <div class="dur-grid" id="dur-grid">
+            <button type="button" class="dur-btn" data-h="0.25">15 min</button>
+            <button type="button" class="dur-btn" data-h="0.5">30 min</button>
+            <button type="button" class="dur-btn" data-h="0.75">45 min</button>
             <button type="button" class="dur-btn active" data-h="1">1 hr</button>
+            <button type="button" class="dur-btn" data-h="1.5">1.5 hrs</button>
             <button type="button" class="dur-btn" data-h="2">2 hrs</button>
             <button type="button" class="dur-btn" data-h="3">3 hrs</button>
             <button type="button" class="dur-btn" data-h="4">Half day</button>
             <button type="button" class="dur-btn" data-h="8">Full day</button>
           </div>
-          <p class="warn-msg hidden" id="conflict-msg">⚠ This duration overlaps an existing booking.</p>
+          <p class="warn-msg hidden" id="conflict-msg">⚠ This time overlaps an existing booking.</p>
         </div>
         <div class="field">
           <label for="f-notes">Notes <span class="opt">optional</span></label>
